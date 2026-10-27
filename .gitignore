@@ -52,14 +52,19 @@ prompt
 server.log
 # Skills directory
 /skills/
-# --- secrets & local data (never publish) ---
+# --- env files: real .env stays local; only the template is committed ---
 .env
 .env.*
 !.env.example
-db/.app-secret
-db/*.db
+
+# --- database & runtime state (COMMITTED ON PURPOSE — private repository) ---
+# db/custom.db  : carries the admin account, projects and settings so a
+#                 deployment to another server keeps the same login/data.
+# db/.app-secret: signs JWT sessions and decrypts settings stored in the DB.
+# db/uploads/   : user-uploaded reconciliation source files.
+# Do NOT make this repository public without first removing/rotating these.
+!db/custom.db
 db/*.db-journal
-db/uploads/
 
 # --- local runtime artifacts & agent workspace ---
 dev.log
