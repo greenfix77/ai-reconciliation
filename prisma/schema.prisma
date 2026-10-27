@@ -1,0 +1,281 @@
+// AI-First Financial Reconciliation Platform — Data Model
+// Security: every user-owned row is always queried scoped by userId.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  passwordHash   String
+  name           String
+  role           String       @default("user") // user | admin
+  status         String       @default("active") // active | disabled (admin deactivation)
+  disabledAt     DateTime?
+  locale         String       @default("fa") // fa | en
+  theme          String       @default("system") // light | dark | system
+  currency       String       @default("IRR")
+  // Per-user quota (null => platform defaults from PlatformSetting)
+  maxProjects    Int?
+  dailyAiLimit   Int?
+  canUseAi       Boolean      @default(true)
+  failedAttempts Int          @default(0)
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  categories    Category[]
+  projects      Project[]
+  providers     AiProvider[]
+  notifications Notification[]
+  activityLogs  ActivityLog[]
+  templates     Template[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String   @default("#1d4ed8")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects Project[]
+
+  @@index([userId])
+}
+
+model Project {
+  id               String    @id @default(cuid())
+  userId           String
+  categoryId       String?
+  name             String
+  description      String?
+  status           String    @default("draft") // draft | ready | processing | reconciled | failed | archived
+  aiProviderId     String? // null => built-in platform AI
+  aiModel          String?
+  config           String    @default("{}") // JSON ReconciliationConfig snapshot
+  lastReconciledAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category        Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  files           File[]
+  reconciliations Reconciliation[]
+  jobs            Job[]
+
+  @@index([userId])
+  @@index([categoryId])
+}
+
+model File {
+  id           String   @id @default(cuid())
+  projectId    String
+  userId       String
+  originalName String
+  storedPath   String // server-only path (db/uploads/...), never exposed
+  mimeType     String
+  size         Int
+  side         String   @default("B") // "A" = primary statement, "B" = comparison
+  status       String   @default("uploaded") // uploaded | parsing | parsed | failed
+  parseError   String?
+  txCount      Int      @default(0)
+  columnsMeta  String? // JSON detected column mapping + sheet info
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  fileId      String
+  side        String // "A" | "B"
+  rowIndex    Int
+  date        DateTime?
+  description String?
+  reference   String?
+  debit       Float?
+  credit      Float?
+  amountMinor Int // signed exact minor units (scale 2); credit(+)/debit(−)
+  balance     Float?
+  currency    String?
+  flags       String   @default("[]") // JSON: ["duplicate","invalid_date","invalid_amount","suspect"]
+  createdAt   DateTime @default(now())
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId])
+  @@index([side, amountMinor])
+}
+
+model Reconciliation {
+  id            String    @id @default(cuid())
+  projectId     String
+  userId        String
+  jobId         String?
+  providerId    String? // null => built-in AI
+  providerName  String    @default("AI")
+  model         String
+  config        String // JSON ReconciliationConfig snapshot
+  status        String    @default("running") // running | completed | failed
+  stats         String? // JSON ReconciliationStats
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  groups  MatchGroup[]
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+model MatchGroup {
+  id               String    @id @default(cuid())
+  reconciliationId String
+  type             String // exact | ai_match | one_to_many | many_to_one | amount_diff | date_diff | missing_a | missing_b | duplicate | unmatched | invalid
+  status           String    @default("pending") // pending | approved | rejected | resolved | manual
+  confidence       Float     @default(0) // 0..1 (AI suggestion quality — NOT calibrated probability)
+  amountDiffMinor  Int       @default(0)
+  dateDiffDays     Int?
+  descSimilarity   Float     @default(0)
+  explanation      String? // AI reasoning in project locale
+  evidence         String? // JSON supporting evidence
+  validationStatus String    @default("valid") // valid | warning | invalid
+  userNote         String?
+  decidedBy        String    @default("ai") // ai | user
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  reconciliation Reconciliation  @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  items          MatchItem[]
+  history        MatchHistory[]
+
+  @@index([reconciliationId, type])
+}
+
+model MatchItem {
+  id            String   @id @default(cuid())
+  groupId       String
+  transactionId String
+  side          String // "A" | "B"
+  createdAt     DateTime @default(now())
+
+  group MatchGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+model MatchHistory {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String?
+  action    String // approved | rejected | note | manual_link | resolved | reopened
+  note      String?
+  at        DateTime @default(now())
+
+  group MatchGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+model AiProvider {
+  id           String    @id @default(cuid())
+  userId       String
+  name         String
+  type         String // openai | anthropic | gemini | custom (OpenAI-compatible)
+  baseUrl      String?
+  apiKeyEnc    String // AES-256-GCM ciphertext — never returned to client
+  keyHint      String // masked hint, e.g. "sk-…a1b2"
+  models       String    @default("[]") // JSON array of model ids
+  isDefault    Boolean   @default(false)
+  status       String    @default("untested") // untested | connected | failed
+  lastTestedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Job {
+  id        String    @id @default(cuid())
+  userId    String
+  projectId String?
+  type      String // parse | reconcile | ai_tool
+  status    String    @default("queued") // queued | running | completed | failed
+  progress  Int       @default(0)
+  total     Int       @default(0)
+  stage     String?
+  error     String?
+  payload   String? // JSON
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String // login | login_failed | register | create_project | ...
+  entityType String?
+  entityId   String?
+  meta       String?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String?
+  type      String   @default("info") // info | success | warning | error
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model Template {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  config    String // JSON ReconciliationConfig
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
