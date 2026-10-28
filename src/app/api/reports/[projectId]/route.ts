@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { handleApi, jsonOk, requireUser, ApiError } from '@/lib/http'
 import { audit } from '@/lib/audit'
 import { db } from '@/lib/db'
+import { fromDbMinor } from '@/lib/money'
 import { ReconciliationConfig, ReconciliationStats, ResultGroup } from '@/lib/types'
 import * as XLSX from 'xlsx'
 
@@ -208,7 +209,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
       type: g.type,
       status: g.status,
       confidence: g.confidence,
-      amountDiffMinor: g.amountDiffMinor,
+      amountDiffMinor: fromDbMinor(g.amountDiffMinor),
       dateDiffDays: g.dateDiffDays,
       descSimilarity: g.descSimilarity,
       explanation: g.explanation,
@@ -227,7 +228,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
             date: tx?.date?.toISOString() ?? null,
             description: tx?.description ?? null,
             reference: tx?.reference ?? null,
-            amountMinor: tx?.amountMinor ?? 0,
+            amountMinor: tx ? fromDbMinor(tx.amountMinor) : 0,
             balance: tx?.balance ?? null,
             flags: safeFlags(tx?.flags),
           },

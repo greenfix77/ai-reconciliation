@@ -6,6 +6,7 @@ import { audit } from '@/lib/audit'
 import { rateLimit } from '@/lib/rate-limit'
 import { aiChat } from '@/lib/ai-client'
 import { checkAiQuota } from '@/lib/quota'
+import { fromDbMinor } from '@/lib/money'
 import { buildChatSystemPrompt } from '@/lib/engine/prompts'
 import { AiChatMessage, ReconciliationStats } from '@/lib/types'
 
@@ -88,8 +89,8 @@ export async function POST(req: NextRequest) {
       }
 
       const txCols = { reference: true, date: true, description: true, amountMinor: true } as const
-      const fmtTx = (t: { reference: string | null; date: Date | null; description: string | null; amountMinor: number }) =>
-        `- ${t.date ? t.date.toISOString().slice(0, 10) : '—'} | ref: ${t.reference ?? '—'} | ${t.description ?? ''} | ${(t.amountMinor / 100).toLocaleString('en-US')}`
+      const fmtTx = (t: { reference: string | null; date: Date | null; description: string | null; amountMinor: bigint | number }) =>
+        `- ${t.date ? t.date.toISOString().slice(0, 10) : '—'} | ref: ${t.reference ?? '—'} | ${t.description ?? ''} | ${(fromDbMinor(t.amountMinor) / 100).toLocaleString('en-US')}`
 
       if (diffTxIds.length > 0) {
         const uniqueDiff = [...new Set(diffTxIds)].slice(0, 20)

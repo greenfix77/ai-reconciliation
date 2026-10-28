@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { handleApi, jsonOk, requireUser, ApiError } from '@/lib/http'
 import { db } from '@/lib/db'
+import { fromDbMinor } from '@/lib/money'
 import { DEFAULT_CONFIG, ReconciliationConfig, ReconciliationStats, ResultsResponse, ResultGroup, ResultGroupItem, JobItem } from '@/lib/types'
 
 export const runtime = 'nodejs'
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         type: g.type,
         status: g.status,
         confidence: g.confidence,
-        amountDiffMinor: g.amountDiffMinor,
+        amountDiffMinor: fromDbMinor(g.amountDiffMinor),
         dateDiffDays: g.dateDiffDays,
         descSimilarity: g.descSimilarity,
         explanation: g.explanation,
@@ -82,7 +83,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                 date: t.date?.toISOString() ?? null,
                 description: t.description,
                 reference: t.reference,
-                amountMinor: t.amountMinor,
+                amountMinor: fromDbMinor(t.amountMinor),
                 balance: t.balance,
                 flags: parseJsonSafe<string[]>(t.flags, []),
               },

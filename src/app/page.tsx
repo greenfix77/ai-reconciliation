@@ -14,6 +14,7 @@ import { ProvidersView } from '@/components/views/providers-view'
 import { SettingsView } from '@/components/views/settings-view'
 import { ReportsView } from '@/components/views/reports-view'
 import { AiToolsView } from '@/components/views/aitools-view'
+import { ResultsBridge } from '@/components/results/results-bridge'
 import { HelpView } from '@/components/views/help-view'
 import { AdminView } from '@/components/views/admin-view'
 import { useAppStore } from '@/lib/store'
@@ -105,6 +106,11 @@ export default function HomePage() {
           {view === 'aitools' && <AiToolsView />}
           {view === 'help' && <HelpView />}
           {view === 'admin' && user.role === 'admin' && <AdminView />}
+          {/* Global reconcile progress bridge — must live ABOVE view switching so
+              'recon:start' dispatched from ANY view (project-detail CTA, ai-tools,
+              reports) finds a listener; previously mounted only in AiToolsView, so
+              the project-detail start button silently did nothing. */}
+          <ResultsBridge />
         </AppShell>
       )}
       <Toaster position={locale === 'fa' ? 'top-left' : 'top-right'} richColors dir={locale === 'fa' ? 'rtl' : 'ltr'} />

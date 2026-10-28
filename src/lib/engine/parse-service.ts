@@ -3,6 +3,7 @@ import Papa from 'papaparse'
 import { db } from '../db'
 import { parseAmountToMinor } from '../money'
 import { parseFlexibleDate, normalizeDigits } from '../jalali'
+import { extractErrorReason } from '../error-reason'
 import { aiChat, extractJson } from '../ai-client'
 import fs from 'fs'
 import path from 'path'
@@ -10,8 +11,13 @@ import path from 'path'
 /**
  * File parsing pipeline: xlsx/xls/csv/pdf → unified Transaction rows.
  * - Heuristic header detection (Persian + English financial column names)
+ * - Persian/Arabic letter-variant normalization (ك→ک, ي→ی) so accounting
+ *   exports typed with Arabic keyboard layouts still map deterministically
+ * - Excel serial-date cell fallback (dates stored as plain numbers)
  * - AI-assisted column mapping fallback (structured JSON)
  * - Data quality flags: invalid_date, invalid_amount, missing_description, suspect, duplicate
+ * - Amounts stored as exact 64-bit BigInt minor units (ریال amounts exceed Int32)
+ * - Bulk insert via createMany (single atomic statement — no interactive-transaction timeout)
  * - Preserves source row references
  */
 
@@ -58,9 +64,29 @@ const CREDIT_HINTS = ['بستانکار', 'واریز', 'credit', 'دریافت�
 const AMOUNT_HINTS = ['مبلغ', 'مبلغ تراکنش', 'amount', 'value', 'مبلغ کل', 'مبلغ ریالی', 'مبلغ (ریال)', 'مبلغ (تومان)']
 const BALANCE_HINTS = ['موجودی', 'مانده', 'balance', 'مانده حساب']
 
+// Arabic-typed variants of Persian letters (very common in accounting software
+// exports) must not break header matching — normalize BOTH sides.
+function normalizePersianChars(s: string): string {
+  return s
+    .replace(/ك/g, 'ک')
+    .replace(/ي/g, 'ی')
+    .replace(/ى/g, 'ی')
+    .replace(/ة/g, 'ه')
+    .replace(/[أإٱ]/g, 'ا')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ی')
+}
+
 function matchHint(header: string, hints: string[]): boolean {
-  const h = normalizeDigits(header.toLowerCase().trim())
-  return hints.some((hint) => h.includes(hint.toLowerCase()))
+  const h = normalizePersianChars(normalizeDigits(header.toLowerCase().trim()))
+  return hints.some((hint) => h.includes(normalizePersianChars(hint.toLowerCase())))
+}
+
+/** Excel serial date (1900 date system, epoch 1899-12-30) → Date; guarded to 1954..2088. */
+function excelSerialToDate(serial: number): Date | null {
+  if (!Number.isFinite(serial) || serial < 20000 || serial > 80000) return null
+  const d = new Date(Math.round((serial - 25569) * 86_400_000))
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
 function detectHeaderRow(rows: Cell[][]): number {
@@ -263,7 +289,8 @@ export async function processFile(fileId: string, opts: { aiAssist?: boolean } =
       }
     }
 
-    // Build transactions
+    // Build transactions (amountMinor computed in the BigInt domain so that
+    // credit−debit is exact even when each side is a large safe integer)
     const flagsSeen = new Set<string>()
     const records: {
       side: string
@@ -273,41 +300,44 @@ export async function processFile(fileId: string, opts: { aiAssist?: boolean } =
       reference: string | null
       debit: number | null
       credit: number | null
-      amountMinor: number
+      amountMinor: bigint
       balance: number | null
       flags: string[]
     }[] = []
 
-    let lastGoodAmount = 0
     for (const row of parsed.rows) {
       const flags: string[] = []
-      const date = parseFlexibleDate(row.dateRaw)
+      let date = parseFlexibleDate(row.dateRaw)
+      // Excel sometimes stores dates as bare serial numbers (formatting lost in export)
+      if (!date && row.dateRaw && /^\d{5}$/.test(row.dateRaw.trim())) {
+        date = excelSerialToDate(Number(row.dateRaw.trim()))
+      }
       if (row.dateRaw && !date) flags.push('invalid_date')
 
       let debit: number | null = null
       let credit: number | null = null
-      let amountMinor = 0
+      let amountMinor = BigInt(0)
 
       if (row.debitRaw || row.creditRaw) {
         debit = row.debitRaw ? parseAmountToMinor(row.debitRaw) : null
         credit = row.creditRaw ? parseAmountToMinor(row.creditRaw) : null
         if (row.debitRaw && debit === null) flags.push('invalid_amount')
         if (row.creditRaw && credit === null) flags.push('invalid_amount')
-        amountMinor = (credit ?? 0) - (debit ?? 0)
+        amountMinor = BigInt(credit ?? 0) - BigInt(debit ?? 0)
       } else if (row.amountRaw) {
         const amt = parseAmountToMinor(row.amountRaw)
         if (amt === null) {
           flags.push('invalid_amount')
-          amountMinor = 0
+          amountMinor = BigInt(0)
         } else {
-          amountMinor = amt
+          amountMinor = BigInt(amt)
         }
       } else {
         flags.push('missing_amount')
-        amountMinor = 0
+        amountMinor = BigInt(0)
       }
 
-      if (amountMinor === 0 && !row.amountRaw && !row.debitRaw && !row.creditRaw) {
+      if (amountMinor === BigInt(0) && !row.amountRaw && !row.debitRaw && !row.creditRaw) {
         // fully unusable row
         flags.push('suspect')
       }
@@ -325,7 +355,6 @@ export async function processFile(fileId: string, opts: { aiAssist?: boolean } =
         balance: row.balanceRaw ? (parseAmountToMinor(row.balanceRaw) ?? 0) / 100 : null,
         flags,
       })
-      if (amountMinor !== 0) lastGoodAmount = amountMinor
       for (const f of flags) flagsSeen.add(f)
     }
 
@@ -344,25 +373,25 @@ export async function processFile(fileId: string, opts: { aiAssist?: boolean } =
       }
     }
 
-    await db.$transaction(
-      records.map((r) =>
-        db.transaction.create({
-          data: {
-            fileId: file.id,
-            side: file.side,
-            rowIndex: r.rowIndex,
-            date: r.date,
-            description: r.description,
-            reference: r.reference,
-            debit: r.debit,
-            credit: r.credit,
-            amountMinor: r.amountMinor,
-            balance: r.balance,
-            flags: JSON.stringify(r.flags),
-          },
-        })
-      )
-    )
+    // Bulk insert — one atomic statement, no interactive-transaction timeout
+    // on large files, and BigInt amounts accepted natively.
+    if (records.length > 0) {
+      await db.transaction.createMany({
+        data: records.map((r) => ({
+          fileId: file.id,
+          side: file.side,
+          rowIndex: r.rowIndex,
+          date: r.date,
+          description: r.description,
+          reference: r.reference,
+          debit: r.debit,
+          credit: r.credit,
+          amountMinor: r.amountMinor,
+          balance: r.balance,
+          flags: JSON.stringify(r.flags),
+        })),
+      })
+    }
 
     await db.file.update({
       where: { id: file.id },
@@ -374,8 +403,10 @@ export async function processFile(fileId: string, opts: { aiAssist?: boolean } =
     })
     return { ok: true, txCount: records.length }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown parsing error'
-    await db.file.update({ where: { id: fileId }, data: { status: 'failed', parseError: message.slice(0, 500) } })
+    // Store the MEANINGFUL reason (Prisma messages carry code context before
+    // the actual cause — the old message.slice(0, 500) hid it entirely).
+    const message = extractErrorReason(err)
+    await db.file.update({ where: { id: fileId }, data: { status: 'failed', parseError: message } })
     return { ok: false, error: message }
   }
 }

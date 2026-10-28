@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import { ApiError } from '@/lib/http'
 import { DEFAULT_CONFIG, ReconciliationConfig, ReconciliationStats } from '@/lib/types'
-import { descriptionSimilarity } from '@/lib/money'
+import { descriptionSimilarity, fromDbMinor, toDbMinor } from '@/lib/money'
 import { aiChat, extractJson } from '@/lib/ai-client'
 import { audit, notify } from '@/lib/audit'
 import { RECON_SYSTEM_PROMPT, buildReconcileUserPrompt, RECON_RETRY_SUFFIX } from './prompts'
@@ -269,7 +269,7 @@ export async function executeReconciliation(prepared: PreparedRun): Promise<void
       date: t.date,
       description: t.description,
       reference: t.reference,
-      amountMinor: t.amountMinor,
+      amountMinor: fromDbMinor(t.amountMinor),
       flags: (() => {
         try {
           return JSON.parse(t.flags || '[]') as string[]
@@ -278,7 +278,7 @@ export async function executeReconciliation(prepared: PreparedRun): Promise<void
         }
       })(),
     }))
-    const txById = new Map(txs.map((t) => [t.id, t]))
+    const txById = new Map(txs.map((t) => [t.id, { ...t, amountMinor: fromDbMinor(t.amountMinor) }]))
     const fileNameById = new Map(files.map((f) => [f.id, f.originalName]))
     let txA = txLite.filter((t) => t.side === 'A')
     let txB = txLite.filter((t) => t.side === 'B')
@@ -290,6 +290,16 @@ export async function executeReconciliation(prepared: PreparedRun): Promise<void
       txB = txLite.filter((t) => t.fileId !== firstFileId)
     }
     if (txA.length === 0 || txB.length === 0) throw new ApiError(400, 'تراکنش‌های کافی برای تطبیق وجود ندارد (هر دو طرف لازم است)', 'NO_TRANSACTIONS')
+
+    // Data-quality gate: rows whose amount could not be parsed (invalid_amount /
+    // missing_amount) would enter matching as 0-amount noise. They are excluded
+    // from the match pipeline and surface as `invalid` groups in the results
+    // instead — nothing is silently dropped, and one bad row never fails a run.
+    const isUnusable = (t: TxLite) => t.flags.includes('invalid_amount') || t.flags.includes('missing_amount')
+    const invalidRows = [...txA, ...txB].filter(isUnusable)
+    txA = txA.filter((t) => !isUnusable(t))
+    txB = txB.filter((t) => !isUnusable(t))
+    if (txA.length === 0 || txB.length === 0) throw new ApiError(400, 'پس از حذف ردیف‌های نامعتبر، تراکنش قابل تطبیق کافی وجود ندارد', 'NO_TRANSACTIONS')
 
     const direction = config.matchDirection
     const effDateTol = config.requireExactDate ? 0 : config.dateToleranceDays
@@ -700,6 +710,27 @@ export async function executeReconciliation(prepared: PreparedRun): Promise<void
     const unusedA = txA.filter((t) => !used.has(t.id) && !duplicateTxIds.has(t.id))
     const unusedB = txB.filter((t) => !used.has(t.id) && !duplicateTxIds.has(t.id))
     const aiFailedExplanation = locale === 'fa' ? 'AI در دسترس نبود' : 'AI unavailable'
+
+    // Unusable rows (unreadable amount) — kept visible for review, excluded from matching
+    for (const t of invalidRows) {
+      groups.push({
+        type: 'invalid',
+        status: 'pending',
+        confidence: 0,
+        amountDiffMinor: 0,
+        dateDiffDays: null,
+        descSimilarity: 0,
+        explanation:
+          locale === 'fa'
+            ? 'مبلغ این ردیف قابل خواندن نیست؛ از تطبیق حذف شد ولی برای بررسی نمایش داده می‌شود'
+            : 'Amount unreadable; excluded from matching but shown for review',
+        evidence: [`${fileNameById.get(t.fileId) ?? ''} — ${locale === 'fa' ? 'ردیف' : 'row'} ${t.rowIndex}`],
+        validationStatus: 'invalid',
+        decidedBy: 'ai',
+        aIds: t.side === 'A' ? [t.id] : [],
+        bIds: t.side === 'B' ? [t.id] : [],
+      })
+    }
     for (const a of unusedA) {
       const hadCandidates = aWithCandidates.has(a.id)
       groups.push({
@@ -761,6 +792,7 @@ export async function executeReconciliation(prepared: PreparedRun): Promise<void
       missingA,
       missingB,
       unmatched,
+      invalid: count('invalid'),
       totalGroups,
       matchedTotal,
       matchRatePct: totalGroups > 0 ? Math.round((matchedTotal / totalGroups) * 100) : 0,
@@ -780,7 +812,7 @@ export async function executeReconciliation(prepared: PreparedRun): Promise<void
               type: g.type,
               status: g.status,
               confidence: g.confidence,
-              amountDiffMinor: g.amountDiffMinor,
+              amountDiffMinor: toDbMinor(g.amountDiffMinor),
               dateDiffDays: g.dateDiffDays,
               descSimilarity: g.descSimilarity,
               explanation: g.explanation,

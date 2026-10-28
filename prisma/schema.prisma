@@ -110,7 +110,7 @@ model Transaction {
   reference   String?
   debit       Float?
   credit      Float?
-  amountMinor Int // signed exact minor units (scale 2); credit(+)/debit(−)
+  amountMinor BigInt // signed exact minor units (scale 2); credit(+)/debit(−) — 64-bit: ریال amounts ×100 exceed Int32 (2,147,483,647 minor ≈ 21.47M)
   balance     Float?
   currency    String?
   flags       String   @default("[]") // JSON: ["duplicate","invalid_date","invalid_amount","suspect"]
@@ -149,7 +149,7 @@ model MatchGroup {
   type             String // exact | ai_match | one_to_many | many_to_one | amount_diff | date_diff | missing_a | missing_b | duplicate | unmatched | invalid
   status           String    @default("pending") // pending | approved | rejected | resolved | manual
   confidence       Float     @default(0) // 0..1 (AI suggestion quality — NOT calibrated probability)
-  amountDiffMinor  Int       @default(0)
+  amountDiffMinor  BigInt    @default(0)
   dateDiffDays     Int?
   descSimilarity   Float     @default(0)
   explanation      String? // AI reasoning in project locale

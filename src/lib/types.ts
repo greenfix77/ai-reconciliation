@@ -200,6 +200,7 @@ export type ReconciliationStats = {
   missingA: number
   missingB: number
   unmatched: number
+  invalid: number // rows excluded from matching (unreadable amount) — shown for review
   totalGroups: number
   matchedTotal: number
   matchRatePct: number

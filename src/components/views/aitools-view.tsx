@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { apiFetch } from '@/lib/api-client'
 import { useI18n } from '@/lib/i18n'
 import { ResultsPanel } from '@/components/results/results-panel'
-import { ResultsBridge, RECON_SELECT_PROJECT_EVENT, RECON_START_EVENT } from '@/components/results/results-bridge'
+import { RECON_SELECT_PROJECT_EVENT, RECON_START_EVENT, getLastSelectedProjectId } from '@/components/results/results-bridge'
 import { AiToolsLauncher } from '@/components/aitools/tool-cards'
 import { AiChatCard } from '@/components/aitools/ai-chat'
 
@@ -54,6 +54,10 @@ export function AiToolsView() {
       const detail = (e as CustomEvent<{ projectId?: string }>).detail ?? {}
       if (detail.projectId) setSelectedProject(detail.projectId)
     }
+    // Late-mount race: the bridge may announce the project BEFORE this view is
+    // mounted (dispatch → setView in the same tick). Read the last announcement.
+    const last = getLastSelectedProjectId()
+    if (last) setSelectedProject(last)
     window.addEventListener(RECON_SELECT_PROJECT_EVENT, onSelectProject)
     return () => window.removeEventListener(RECON_SELECT_PROJECT_EVENT, onSelectProject)
   }, [])
@@ -65,7 +69,9 @@ export function AiToolsView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <ResultsBridge />
+      {/* ResultsBridge is mounted globally in page.tsx (was here — dead when the
+          start CTA fired from other views; a second instance would also double-render
+          the progress dialog). */}
 
       {/* header */}
       <div className="flex flex-wrap items-end justify-between gap-2">

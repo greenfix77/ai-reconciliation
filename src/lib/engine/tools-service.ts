@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { ApiError } from '@/lib/http'
 import { AiToolType, DEFAULT_CONFIG, ReconciliationConfig, ReconciliationStats } from '@/lib/types'
+import { fromDbMinor } from '@/lib/money'
 import { aiChat } from '@/lib/ai-client'
 import { buildToolSystemPrompt, toolUserPrompt } from './prompts'
 
@@ -93,7 +94,7 @@ async function loadCoreData(projectId: string, userId: string) {
       type: g.type,
       status: g.status,
       confidence: g.confidence,
-      amountDiffMinor: g.amountDiffMinor,
+      amountDiffMinor: fromDbMinor(g.amountDiffMinor),
       dateDiffDays: g.dateDiffDays,
       explanation: g.explanation,
       items: g.items
@@ -106,7 +107,7 @@ async function loadCoreData(projectId: string, userId: string) {
               reference: t.reference,
               date: t.date,
               description: t.description,
-              amountMinor: t.amountMinor,
+              amountMinor: fromDbMinor(t.amountMinor),
               flags: t.flags,
             },
           }
@@ -182,7 +183,7 @@ async function anomalyBlock(projectId: string): Promise<string> {
     select: { side: true, reference: true, date: true, description: true, amountMinor: true, flags: true },
     orderBy: { amountMinor: 'desc' },
   })
-  const rows = txs.map((t) => ({ ...toRow(t, t.side), flags: (() => { try { return JSON.parse(t.flags || '[]') as string[] } catch { return [] } })() }))
+  const rows = txs.map((t) => ({ ...toRow({ ...t, amountMinor: fromDbMinor(t.amountMinor) }, t.side), flags: (() => { try { return JSON.parse(t.flags || '[]') as string[] } catch { return [] } })() }))
   const lines: string[] = []
   const round = rows.filter((r) => r.amount !== 0 && Math.abs(r.amount) % 1000000 === 0)
   const amountCounts = new Map<number, TxRow[]>()

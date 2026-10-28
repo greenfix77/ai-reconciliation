@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { handleApi, jsonOk, requireAdmin, parseBody, ApiError } from '@/lib/http'
 import { db } from '@/lib/db'
+import { fromDbMinor } from '@/lib/money'
 import { audit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     // Full transaction content for the two most recent files (oversight depth: complete)
     const fileIds = files.slice(0, 2).map((f) => f.id)
-    const transactions = fileIds.length
+    const rawTransactions = fileIds.length
       ? await db.transaction.findMany({
           where: { fileId: { in: fileIds } },
           orderBy: [{ fileId: 'asc' }, { rowIndex: 'asc' }],
@@ -50,6 +51,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
           select: { id: true, fileId: true, side: true, rowIndex: true, date: true, description: true, reference: true, amountMinor: true, debit: true, credit: true, currency: true, flags: true },
         })
       : []
+    const transactions = rawTransactions.map((t) => ({ ...t, amountMinor: fromDbMinor(t.amountMinor) }))
 
     // Latest reconciliation match groups with the real matched rows.
     // MatchItem stores transactionId without a Prisma relation → manual join.
@@ -69,10 +71,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
             select: { id: true, side: true, date: true, description: true, reference: true, amountMinor: true },
           })
         : []
-      const txMap = new Map(txs.map((t) => [t.id, t]))
+      const txMap = new Map(txs.map((t) => [t.id, { ...t, amountMinor: fromDbMinor(t.amountMinor) }]))
       matchGroups = groups.map((g) => ({
         id: g.id, type: g.type, status: g.status, confidence: g.confidence,
-        amountDiffMinor: g.amountDiffMinor, dateDiffDays: g.dateDiffDays,
+        amountDiffMinor: fromDbMinor(g.amountDiffMinor), dateDiffDays: g.dateDiffDays,
         explanation: g.explanation, validationStatus: g.validationStatus, userNote: g.userNote,
         items: g.items
           .map((it) => ({ side: it.side, transaction: txMap.get(it.transactionId) ?? null }))

@@ -24,6 +24,17 @@ export const RECON_START_EVENT = 'recon:start'
 export const RECON_OPEN_RESULTS_EVENT = 'recon:open-results'
 export const RECON_SELECT_PROJECT_EVENT = 'recon:select-project'
 
+/**
+ * Last project id announced via RECON_SELECT_PROJECT_EVENT.
+ * A view that mounts AFTER the event (view switch happens synchronously after
+ * dispatch) reads this on mount instead of missing the notification — fixes the
+ * race where "مشاهده نتایج" landed on the AI-tools view with no project selected.
+ */
+let lastSelectedProjectId: string | null = null
+export function getLastSelectedProjectId(): string | null {
+  return lastSelectedProjectId
+}
+
 type BridgeState = {
   jobId: string
   projectId: string
@@ -40,6 +51,7 @@ export function ResultsBridge() {
   const open = !!run
 
   const selectProject = useCallback((projectId: string) => {
+    lastSelectedProjectId = projectId
     window.dispatchEvent(new CustomEvent(RECON_SELECT_PROJECT_EVENT, { detail: { projectId } }))
   }, [])
 
