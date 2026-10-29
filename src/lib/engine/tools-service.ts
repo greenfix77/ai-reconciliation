@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { computeBankReconStatement } from '@/lib/engine/recon-statement'
 import { ApiError } from '@/lib/http'
 import { AiToolType, DEFAULT_CONFIG, ReconciliationConfig, ReconciliationStats } from '@/lib/types'
 import { fromDbMinor } from '@/lib/money'
@@ -222,25 +223,52 @@ export async function runAiTool(projectId: string, userId: string, tool: AiToolT
   const header = `Project: ${project.name}${project.description ? ` — ${project.description}` : ''}
 ${statsBlock(stats, config, reconMeta)}`
 
+  // صورت مغایرت بانکی — give every tool the classic bank-reconciliation bridge numbers
+  let statementBlock = ''
+  try {
+    const st = await computeBankReconStatement(projectId, userId)
+    if (st) {
+      const m = (x: number) => (x / 100).toLocaleString('en-US')
+      const top = (arr: typeof st.bankCreditsOpen, sign: 1 | -1) =>
+        arr
+          .slice(0, 8)
+          .map((i) => `${sign > 0 ? '+' : '-'}${m(Math.abs(i.inflowMinor))} @${i.date ?? '?'} ${(i.description ?? '').slice(0, 40)}`)
+          .join(' | ')
+      statementBlock = `
+
+BANK RECONCILIATION STATEMENT (صورت مغایرت بانکی — bank = side ${st.bankSide}, book = side ${st.bookSide}):
+مانده طبق دفتر: ${st.bookClosingMinor !== null ? m(st.bookClosingMinor) : 'n/a'} | مانده طبق بانک: ${st.bankClosingMinor !== null ? m(st.bankClosingMinor) : 'n/a'}
++ اقلام بستانکار بانک (bank واریز not in book): ${m(st.totals.bankCreditsMinor)} (${st.totals.bankCreditsCount} items)
+- اقلام بدهکار بانک (bank برداشت/کارمزد not in book): ${m(st.totals.bankDebitsMinor)} (${st.totals.bankDebitsCount} items)
++ اقلام بدهکار دفتر (book بدهكار not cleared at bank): ${m(st.totals.bookDebitsMinor)} (${st.totals.bookDebitsCount} items)
+- اقلام بستانکار دفتر (book بستانكار not executed at bank): ${m(st.totals.bookCreditsMinor)} (${st.totals.bookCreditsCount} items)
+= مانده واقعی از دفتر: ${m(st.trueBalanceFromBookMinor)} | مانده واقعی از بانک: ${m(st.trueBalanceFromBankMinor)} | residual: ${m(st.residualMinor)} ${st.converged ? '(converged)' : '(NOT converged — explain honestly)'}
+Top bank open items: ${top(st.bankCreditsOpen, 1)} ${top(st.bankDebitsOpen, -1)}`
+    }
+  } catch {
+    // statement is best-effort context; never block the tool
+  }
+  const headerWithStatement = header + statementBlock
+
   let data: string
   switch (tool) {
     case 'discrepancy_analysis':
-      data = `${header}\n\nDISCREPANCY GROUPS:\n${discrepancyBlock(groups)}`
+      data = `${headerWithStatement}\n\nDISCREPANCY GROUPS:\n${discrepancyBlock(groups)}`
       break
     case 'root_cause':
-      data = `${header}\n\nDISCREPANCY GROUPS (with refs/dates/amounts):\n${discrepancyBlock(groups)}\n\nMATCHED SAMPLE (for context):\n${matchedSampleBlock(groups)}`
+      data = `${headerWithStatement}\n\nDISCREPANCY GROUPS (with refs/dates/amounts):\n${discrepancyBlock(groups)}\n\nMATCHED SAMPLE (for context):\n${matchedSampleBlock(groups)}`
       break
     case 'resolution_recommendations':
-      data = `${header}\n\nDISCREPANCY GROUPS:\n${discrepancyBlock(groups)}`
+      data = `${headerWithStatement}\n\nDISCREPANCY GROUPS:\n${discrepancyBlock(groups)}`
       break
     case 'accounting_entries':
-      data = `${header}\n\nTOP AMOUNT-DIFF GROUPS:\n${amountDiffBlock(groups)}`
+      data = `${headerWithStatement}\n\nTOP AMOUNT-DIFF GROUPS:\n${amountDiffBlock(groups)}`
       break
     case 'anomaly_detection':
-      data = `${header}\n\nTRANSACTION ANOMALY SCAN:\n${await anomalyBlock(projectId)}`
+      data = `${headerWithStatement}\n\nTRANSACTION ANOMALY SCAN:\n${await anomalyBlock(projectId)}`
       break
     case 'report_generation':
-      data = `${header}\n\nMATCHED SAMPLE:\n${matchedSampleBlock(groups)}\n\nDISCREPANCY GROUPS:\n${discrepancyBlock(groups)}`
+      data = `${headerWithStatement}\n\nMATCHED SAMPLE:\n${matchedSampleBlock(groups)}\n\nDISCREPANCY GROUPS:\n${discrepancyBlock(groups)}`
       break
     case 'project_comparison': {
       if (!previous) {

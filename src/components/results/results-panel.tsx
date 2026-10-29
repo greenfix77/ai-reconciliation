@@ -9,6 +9,7 @@ import {
   CircleAlert,
   Download,
   Eye,
+  FileCheck2,
   FileSpreadsheet,
   Loader2,
   RefreshCw,
@@ -36,6 +37,7 @@ import { apiFetch } from '@/lib/api-client'
 import { formatAmount } from '@/lib/money'
 import { useI18n } from '@/lib/i18n'
 import { JobItem, ResultsResponse, ResultGroup, ResultGroupItem } from '@/lib/types'
+import { StatementView } from '@/components/results/statement-view'
 import { cn } from '@/lib/utils'
 
 // ---------- small presentational helpers ----------
@@ -346,7 +348,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
   return (
     <div className="flex flex-col gap-4">
       {/* header + project-agnostic toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="no-print flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-semibold">
             <BadgeCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -414,7 +416,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
 
           {/* stats cards */}
           {stats && (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="no-print grid grid-cols-2 gap-3 lg:grid-cols-4">
               <StatCard
                 label={t('results.stats.exact')}
                 value={new Intl.NumberFormat(locale === 'fa' ? 'fa-IR' : 'en-US').format(stats.exactMatched)}
@@ -443,7 +445,7 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
           )}
 
           {/* meta line */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+          <div className="no-print flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
             <span>
               {t('results.stats.provider')}: <span className="font-medium text-foreground/80"><bdi>{recon.providerName}</bdi> · <bdi dir="ltr">{recon.model}</bdi></span>
             </span>
@@ -457,8 +459,12 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
 
           {/* tabs */}
           <Tabs value={tab} onValueChange={setTab}>
-            <ScrollArea className="w-full whitespace-nowrap">
+            <ScrollArea className="no-print w-full whitespace-nowrap">
               <TabsList className="inline-flex h-9 w-max items-center gap-1 rounded-xl bg-muted/70 p-1">
+                <TabsTrigger value="statement" className="gap-1.5 rounded-lg px-2.5 py-1 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <FileCheck2 className="h-3.5 w-3.5 text-slate-500" />
+                  {t('results.statement.tab')}
+                </TabsTrigger>
                 {Object.keys(TAB_TYPES).map((key) => (
                   <TabsTrigger key={key} value={key} className="rounded-lg px-2.5 py-1 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
                     {t(`results.tab.${key}`)}
@@ -470,6 +476,11 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
             </ScrollArea>
           </Tabs>
 
+          {/* statement view (صورت مغایرت بانکی) */}
+          {tab === 'statement' && <StatementView projectId={projectId} />}
+
+          {tab !== 'statement' && (
+          <>
           {/* bulk bar */}
           {selected.size > 0 && (
             <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 dark:border-emerald-900 dark:bg-emerald-950/30">
@@ -566,6 +577,8 @@ export function ResultsPanel({ projectId }: { projectId: string }) {
               </Table>
             </div>
           </div>
+          </>
+          )}
         </>
       )}
 

@@ -18,6 +18,10 @@ Rules:
 - type: "one_to_one" for single pair, "one_to_many" if one A entry corresponds to several B entries (you are only scoring candidate pairs, so almost always "one_to_one").
 - reason: SHORT explanation in PERSIAN (فارسی), max 25 words.
 - evidence: 0-3 short strings citing concrete facts (amount diff, date diff, reference match, description meaning).
+PERSIAN ORTHOGRAPHY (mandatory for reason/evidence):
+- Always use half-space (نیم‌فاصله, U+200C) in Persian compounds: «می‌شود», «مغایرت‌یابی», «تطبیق‌نشده», «واریزی‌ها».
+- NEVER glue words together: never write «میشود» instead of «می‌شود», never «راهکارها» as «راهكارها» with Arabic letters.
+- Use Persian letters ک/ی (never Arabic ك/ي) and proper punctuation.
 Output STRICT JSON only, no markdown fences, no prose: {"results":[{"i":<index>,"verdict":"match|no_match|uncertain","confidence":0..1,"reason":"...","type":"one_to_one","evidence":["..."]}]}
 Every input index i MUST appear exactly once in results.`
 
@@ -48,6 +52,13 @@ export function buildChatSystemPrompt(context: string, locale: string): string {
   return `You are the intelligent assistant of "مغایرت‌یاب هوشمند" — a financial reconciliation platform.
 You help accountants understand reconciliation results: why transactions did not match, what the biggest discrepancies are, and what to do next.
 
+BANK RECONCILIATION MODEL (صورت مغایرت بانکی) — the standard Iranian model this platform follows:
+When analyzing discrepancies, structure answers around these two balance bridges:
+- ستون دفتر: مانده طبق دفتر + اقلام بستانکار بانک (واریزهای بانکی که در دفتر ثبت نشده‌اند) − اقلام بدهکار بانک (برداشت‌ها/کارمزدهای بانکی که در دفتر ثبت نشده‌اند) = مانده واقعی
+- ستون بانک: مانده طبق بانک + اقلام بدهکار دفتر (واریزهای ثبت‌شده در دفتر که هنوز در بانک وصول نشده‌اند) − اقلام بستانکار دفتر (برداشت‌های ثبت‌شده در دفتر که نزد بانک انجام نشده‌اند) = مانده واقعی
+- هر دو «مانده واقعی» باید برابر شوند؛ اگر برابر نیستند، علت را با مفهوم «اختلاف تفسیرنشده» توضیح بده (اختلاف مانده افتتاحیه، اقلام باز دوره‌های قبل، یا اختلاف مبالغ تأییدشده).
+- Open items (اقلام باز) come from unmatched transactions: missing_a / missing_b / unmatched / duplicate groups. Bank واریز without a book match = اقلام بستانکار بانک؛ bank برداشت without a book match (مثل کارمزد) = اقلام بدهکار بانک؛ book بدهكار without a bank match = اقلام بدهکار دفتر؛ book بستانكار without a bank match = اقلام بستانکار دفتر.
+
 STRICT RULES:
 - ONLY use the data provided in the CONTEXT below. NEVER invent transactions, amounts, dates or references.
 - If the answer is not in the context, say so honestly and suggest what the user should check.
@@ -55,6 +66,11 @@ STRICT RULES:
 - Cite transaction references (شماره پیگیری) when referring to specific records.
 - Amounts are in minor units (divide by 100 for major). Format large numbers readably.
 - Be concise and structured. Use short markdown (bold, bullet lists) when helpful.
+
+PERSIAN WRITING RULES (for Persian answers):
+- Always use half-space (نیم‌فاصله, U+200C) in compounds: «می‌شود», «نمی‌توان», «مغایرت‌یابی», «تطبیق‌نشده», «گزارش‌ها».
+- NEVER glue words together — words must be separated by spaces or proper نیم‌فاصله.
+- Use Persian letters ک and ی (never Arabic ك and ي). Keep amounts and dates readable.
 
 CONTEXT:
 ${context}`
@@ -68,6 +84,13 @@ STRICT RULES:
 - Use ONLY the DATA provided. Never invent records, amounts or references.
 - Amounts are in minor units (÷100 = major units, currency IRR/ریال).
 - Answer in ${locale === 'fa' ? 'Persian (فارسی)' : 'English'}.
+- Follow the classic Iranian BANK RECONCILIATION MODEL (صورت مغایرت بانکی) when classifying open items:
+  * اقلام بستانکار بانک = bank واریز items not recorded in the book (added to book balance)
+  * اقلام بدهکار بانک = bank برداشت/کارمزد items not recorded in the book (subtracted from book balance)
+  * اقلام بدهکار دفتر = book بدهكار items not yet cleared at the bank (added to bank balance)
+  * اقلام بستانکار دفتر = book بستانكار items not yet executed at the bank (subtracted from bank balance)
+  * مانده واقعی = both sides must converge; explain any residual honestly.
+- PERSIAN ORTHOGRAPHY (mandatory in Persian answers): use half-space (نیم‌فاصله, U+200C) in compounds («می‌شود», «مغایرت‌یابی», «تطبیق‌نشده»); NEVER glue words together; use Persian ک/ی, not Arabic ك/ي.
 - Output clean markdown: headings (###), bold, bullet lists, tables when useful. Max ~450 words.
 - Be specific: cite references, dates and amounts from the data.`
 }

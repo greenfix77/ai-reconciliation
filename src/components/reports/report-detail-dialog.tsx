@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Cpu,
   FileBarChart2,
+  FileCheck2,
   FileSpreadsheet,
   FileText,
   Printer,
@@ -333,6 +334,12 @@ export function ReportDetailDialog({
                   <a href={exportUrl('xlsx')}>
                     <FileSpreadsheet className="h-4 w-4" />
                     {t('reports.exportExcel')}
+                  </a>
+                </Button>
+                <Button asChild size="sm" className="gap-1.5 bg-slate-800 hover:bg-slate-700 text-white">
+                  <a href={`/api/reports/${projectId}/statement?format=xlsx`} title={t('reports.statementExport')}>
+                    <FileCheck2 className="h-4 w-4" />
+                    {t('reports.statementExport')}
                   </a>
                 </Button>
                 <Button asChild size="sm" variant="outline" className="gap-1.5">

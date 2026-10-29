@@ -8,6 +8,7 @@ import { aiChat } from '@/lib/ai-client'
 import { checkAiQuota } from '@/lib/quota'
 import { fromDbMinor } from '@/lib/money'
 import { buildChatSystemPrompt } from '@/lib/engine/prompts'
+import { computeBankReconStatement } from '@/lib/engine/recon-statement'
 import { AiChatMessage, ReconciliationStats } from '@/lib/types'
 
 export const runtime = 'nodejs'
@@ -104,6 +105,31 @@ export async function POST(req: NextRequest) {
       }
       if (!recon) {
         parts.push('No completed reconciliation yet for this project.')
+      } else {
+        // صورت مغایرت بانکی — classic Iranian bank-reconciliation bridge for grounded answers
+        try {
+          const st = await computeBankReconStatement(project.id, user.id)
+          if (st) {
+            const m = (x: number) => (x / 100).toLocaleString('en-US')
+            parts.push(
+              `BANK RECONCILIATION STATEMENT (صورت مغایرت بانکی — bank = side ${st.bankSide}, book = side ${st.bookSide}):
+` +
+                `مانده طبق دفتر: ${st.bookClosingMinor !== null ? m(st.bookClosingMinor) : 'n/a'} | مانده طبق بانک: ${st.bankClosingMinor !== null ? m(st.bankClosingMinor) : 'n/a'}
+` +
+                `+ اقلام بستانکار بانک (bank واریز not in book): ${m(st.totals.bankCreditsMinor)} (${st.totals.bankCreditsCount} items)
+` +
+                `- اقلام بدهکار بانک (bank برداشت/کارمزد not in book): ${m(st.totals.bankDebitsMinor)} (${st.totals.bankDebitsCount} items)
+` +
+                `+ اقلام بدهکار دفتر (book بدهكار not cleared at bank): ${m(st.totals.bookDebitsMinor)} (${st.totals.bookDebitsCount} items)
+` +
+                `- اقلام بستانکار دفتر (book بستانكار not executed at bank): ${m(st.totals.bookCreditsMinor)} (${st.totals.bookCreditsCount} items)
+` +
+                `= مانده واقعی از دفتر: ${m(st.trueBalanceFromBookMinor)} | مانده واقعی از بانک: ${m(st.trueBalanceFromBankMinor)} | residual: ${m(st.residualMinor)} ${st.converged ? '(converged)' : '(NOT converged)'}`
+            )
+          }
+        } catch {
+          // best-effort context only
+        }
       }
 
       const context = parts.join('\n\n').slice(0, 12000)

@@ -74,7 +74,7 @@ export function AiToolsView() {
           the progress dialog). */}
 
       {/* header */}
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="no-print flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-bold">
             <Sparkles className="h-5 w-5 text-violet-600 dark:text-violet-400" />
@@ -96,7 +96,7 @@ export function AiToolsView() {
               </CardTitle>
               <p className="text-xs text-muted-foreground">{t('aitools.projectCard.desc')}</p>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+            <CardContent className="no-print flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
               {projectsLoading ? (
                 <div className="flex h-9 items-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -151,7 +151,7 @@ export function AiToolsView() {
         </div>
 
         {/* ---------- right column ---------- */}
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="no-print flex min-w-0 flex-col gap-4">
           <AiToolsLauncher projectId={selectedProject} />
           <AiChatCard projectId={selectedProject} />
         </div>

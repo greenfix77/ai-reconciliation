@@ -214,7 +214,7 @@ export function AppShell({ user, onLogout, children }: { user: PublicUser; onLog
       {/* Desktop sidebar — first flex child => right side in RTL, left in LTR.
           Spacer width = sidebar width + 12px viewport inset (fixed sidebar uses right/left:12)
           so the topbar/content never slide under the floating sidebar. */}
-      <div className={cn('my-3 hidden shrink-0 transition-all duration-300 lg:block', sidebarCollapsed ? 'w-[92px]' : 'w-[262px]')}>
+      <div className={cn('no-print my-3 hidden shrink-0 transition-all duration-300 lg:block', sidebarCollapsed ? 'w-[92px]' : 'w-[262px]')}>
         <div className="brand-sidebar fixed bottom-3 top-3 flex w-[80px] flex-col rounded-2xl border border-white/5 shadow-xl transition-all" style={{ width: sidebarCollapsed ? 80 : 250, [locale === 'fa' ? 'right' : 'left']: 12 } as React.CSSProperties}>
           <SidebarContent activeView={view} collapsed={sidebarCollapsed} isAdmin={user.role === 'admin'} onNavigate={handleNavigate} />
         </div>
@@ -235,7 +235,7 @@ export function AppShell({ user, onLogout, children }: { user: PublicUser; onLog
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Topbar */}
-        <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+        <header className="no-print sticky top-0 z-30 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/75">
           <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5">
             <div className="flex items-center gap-2">
               <button className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Menu">

@@ -35,7 +35,7 @@ export const AITOOLS_DICT: Record<Locale, Record<string, string>> = {
     'aitools.chat.subtitle': 'پاسخ بر اساس داده‌های واقعی پروژه',
     'aitools.chat.placeholder': 'پیام خود را بنویسید…',
     'aitools.chat.send': 'ارسال',
-    'aitools.chat.thinking': 'دستیار در حال بررسی داده‌ها است…',
+    'aitools.chat.thinking': 'دستیار در حال بررسی داده‌هاست…',
     'aitools.chat.requiresProject': 'برای گفتگو ابتدا یک پروژه انتخاب کنید',
     'aitools.chat.newChat': 'گفتگوی جدید',
     'aitools.chat.error': 'ارتباط با دستیار ناموفق بود',
