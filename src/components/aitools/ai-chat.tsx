@@ -53,6 +53,13 @@ export function AiChatCard({ projectId }: { projectId: string | null }) {
     }
   }
 
+  const clearChat = () => {
+    if (loading) return
+    setMessages([{ role: 'assistant', content: t('aitools.chat.welcome') }])
+    setDraft('')
+    toast.success(t('aitools.chat.cleared'))
+  }
+
   return (
     <Card className="flex min-h-[420px] flex-col rounded-2xl border bg-card card-soft">
       <CardHeader className="flex-row items-center justify-between space-y-0 border-b py-3">
@@ -60,9 +67,16 @@ export function AiChatCard({ projectId }: { projectId: string | null }) {
           <MessageSquareText className="h-4 w-4 text-violet-600 dark:text-violet-400" />
           {t('aitools.chat.title')}
         </CardTitle>
-        <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-lg text-[11px] text-muted-foreground" onClick={() => setMessages([{ role: 'assistant', content: t('aitools.chat.welcome') }])}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1 rounded-lg border-border/70 px-2.5 text-[11px] text-muted-foreground transition-colors hover:border-destructive/50 hover:bg-destructive/5 hover:text-destructive"
+          onClick={clearChat}
+          disabled={loading}
+          aria-label={t('aitools.chat.clearChat')}
+        >
           <Eraser className="h-3 w-3" />
-          {t('aitools.chat.newChat')}
+          {t('aitools.chat.clearChat')}
         </Button>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3 p-3">
